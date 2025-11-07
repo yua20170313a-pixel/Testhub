@@ -1,0 +1,221 @@
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local SoundService = game:GetService("SoundService")
+local Workspace = game:GetService("Workspace")
+local Debris = game:GetService("Debris")
+local TweenService = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+local Character = player.Character or player.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local RootPart = Character:WaitForChild("HumanoidRootPart")
+
+-- UI + Crosshair
+pcall(function() loadstring(game:HttpGet('https://raw.githubusercontent.com/yua20170313a-pixel/LoadingUI/refs/heads/main/Mains'))() end)
+pcall(function() loadstring(game:HttpGet('https://raw.githubusercontent.com/yua20170313a-pixel/Curosshear/refs/heads/main/Main'))() end)
+
+-- Orion UI Library
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/yua20170313a-pixel/Orion/e19e8236bde46c459fb0d617e4640aeb75878703/source"))()
+
+-- 通知設定
+local NotificationSettings = {
+	EnableImage  = "rbxassetid://14562122532",
+	DisableImage = "rbxassetid://17829927053",
+	CheckImage   = "rbxassetid://16210234931",
+	EnableSound  = "rbxassetid://6647898215",
+	DisableSound = "rbxassetid://17582299860",
+	CheckSound   = "rbxassetid://18595195017",
+	Time         = 4,
+	Volume       = 1
+}
+
+local function ShowNotification(title, content, image, soundId)
+	OrionLib:MakeNotification({
+		Name = title or "通知",
+		Content = content or "",
+		Image = image or NotificationSettings.CheckImage,
+		Time = NotificationSettings.Time
+	})
+	if soundId then
+		local sound = Instance.new("Sound")
+		sound.Parent = SoundService
+		sound.Volume = NotificationSettings.Volume
+		sound.SoundId = soundId
+		sound:Play()
+		sound.Ended:Connect(function() sound:Destroy() end)
+	end
+end
+
+local function Notify(title, text, mode)
+	local modes = {
+		Yes = {img=NotificationSettings.EnableImage, sound=NotificationSettings.EnableSound},
+		No  = {img=NotificationSettings.DisableImage, sound=NotificationSettings.DisableSound},
+		Check = {img=NotificationSettings.CheckImage, sound=NotificationSettings.CheckSound}
+	}
+	local data = modes[mode] or {}
+	ShowNotification(title, text, data.img, data.sound)
+end
+
+local function ShowToggleNotification(name, enabled)
+	Notify(name, name..(enabled and " Enabled" or " Disabled"), enabled and "Yes" or "No")
+end
+
+-- 起動通知
+Notify("[Version Checker]", "Version Check...", "Check")
+task.wait(1)
+Notify("[Version Checker]", "Checked the version: V2", "Yes")
+task.wait(0.5)
+Notify("[Version Checker]", "The version is new", "Yes")
+task.wait(0.2)
+
+-- Orion Window
+local Window = OrionLib:MakeWindow({
+	Name = "TestHub",
+	HidePremium = true,
+	IntroEnabled = true,
+	IntroText = "Welcome To "..player.Name.."!",
+	SaveConfig = true,
+	ConfigFolder = "TestHub"
+})
+
+-- Camera Follow System
+local Camera = Workspace.CurrentCamera
+local followTarget = nil
+local followEnabled = false
+local followConnection = nil
+local originalCameraType = Camera.CameraType
+local originalCameraSubject = Camera.CameraSubject
+
+-- プレイヤーリスト作成
+local function buildPlayerList()
+	local list = {}
+	for _, pl in ipairs(Players:GetPlayers()) do
+		if pl ~= player then
+			table.insert(list, string.format("%s [%s]", pl.DisplayName, pl.Name))
+		end
+	end
+	if #list == 0 then
+		table.insert(list, "(対象なし)")
+	end
+	return list
+end
+
+-- 表示文字列からプレイヤーを特定
+local function findPlayerByOption(option)
+	for _, pl in ipairs(Players:GetPlayers()) do
+		local text = string.format("%s [%s]", pl.DisplayName, pl.Name)
+		if text == option then
+			return pl
+		end
+	end
+	return nil
+end
+
+-- 追尾開始
+local function enableFollow()
+	if not followTarget or not followTarget.Character or not followTarget.Character:FindFirstChild("HumanoidRootPart") then
+		Notify("Camera Follow", "追跡対象が無効です", "No")
+		return
+	end
+	if followEnabled then return end
+	followEnabled = true
+	originalCameraType = Camera.CameraType
+	originalCameraSubject = Camera.CameraSubject
+	Camera.CameraType = Enum.CameraType.Scriptable
+
+	followConnection = RunService.RenderStepped:Connect(function()
+		if followTarget and followTarget.Character and followTarget.Character:FindFirstChild("HumanoidRootPart") then
+			local pos = followTarget.Character.HumanoidRootPart.Position
+			local offset = Vector3.new(0, 5, 10)
+			Camera.CFrame = CFrame.new(pos + offset, pos)
+		else
+			Notify("Camera Follow", "対象を見失いました", "No")
+			followEnabled = false
+			if followConnection then
+				followConnection:Disconnect()
+				followConnection = nil
+			end
+			Camera.CameraType = originalCameraType
+			Camera.CameraSubject = originalCameraSubject
+		end
+	end)
+
+	Notify("Camera Follow", "追跡開始: " .. followTarget.DisplayName, "Yes")
+end
+
+-- 追尾停止
+local function disableFollow()
+	if not followEnabled then return end
+	followEnabled = false
+	if followConnection then
+		followConnection:Disconnect()
+		followConnection = nil
+	end
+	Camera.CameraType = originalCameraType
+	Camera.CameraSubject = originalCameraSubject
+	Notify("Camera Follow", "追跡停止", "No")
+end
+
+-- UI作成
+local Tab = Window:MakeTab({
+	Name = "Camera",
+	Icon = "rbxassetid://6022668888",
+	PremiumOnly = false
+})
+
+local PlayerDropdown
+PlayerDropdown = Tab:AddDropdown({
+	Name = "追跡対象を選択",
+	Default = "(対象なし)",
+	Options = buildPlayerList(),
+	Callback = function(option)
+		local pl = findPlayerByOption(option)
+		if pl then
+			followTarget = pl
+			Notify("Camera Follow", "選択中: " .. pl.DisplayName, "Check")
+		else
+			followTarget = nil
+		end
+	end
+})
+
+Tab:AddButton({
+	Name = "リスト更新",
+	Callback = function()
+		PlayerDropdown:Refresh(buildPlayerList(), true)
+		Notify("Camera Follow", "プレイヤーリスト更新", "Check")
+	end
+})
+
+Tab:AddToggle({
+	Name = "カメラ追跡",
+	Default = false,
+	Callback = function(state)
+		if state then
+			enableFollow()
+		else
+			disableFollow()
+		end
+	end
+})
+
+-- プレイヤー退出時自動停止
+Players.PlayerRemoving:Connect(function(pl)
+	if followTarget == pl then
+		disableFollow()
+		followTarget = nil
+		PlayerDropdown:Set("(対象なし)")
+	end
+	task.wait(0.2)
+	PlayerDropdown:Refresh(buildPlayerList(), true)
+end)
+
+-- プレイヤー参加時リスト更新
+Players.PlayerAdded:Connect(function()
+	task.wait(0.5)
+	PlayerDropdown:Refresh(buildPlayerList(), true)
+end)
+
+OrionLib:Init()
